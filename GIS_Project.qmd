@@ -1,0 +1,197 @@
+---
+title: "Distribution of two sea urchin species: Parechinus angulosus and Tripneustes gratilla"
+format: html
+editor: visual
+---
+
+My honours project is focused on the Cape Sea Urchin (*Parechinus angulosus*). Little is known about the diseases that affect these organisms and since research is looking into these sea urchins for potential aquaculture species, it is important to know where they occur along South Africa's coastline.
+
+This GIS looks at the distribution of this species as well as the distribution of another sea urchin species, the Collector Sea Urchin (*Tripneustes gratilla*). The Collector Sea Urchin is already integrated into aquaculture with abalone, providing the abalone with feed. In this GIS, I will see where their distributions overlap.
+
+## Set Working Directory
+
+```{r}
+rm(list = ls())
+setwd("C:/Users/Adele/Desktop/Honours/3. Reproducible Research_Jasper/GIS_SeaUrchin/GIS_SeaUrchin")
+```
+
+## Packages
+
+```{r}
+# Install these packages into the console
+
+# install.packages("rinat")
+# install.packages("ggplot2")
+# install.packages("maps")
+# install.packages("sf")
+# install.packages("tidyverse")
+# install.packages("rosm")
+# install.packages("ggspatial")
+# install.packages("leaflet")
+# install.packages("htmltools")
+# install.packages("mapview")
+# install.packages("leafpop")
+
+library(rinat)
+library(ggplot2)
+library(maps)
+library(sf)
+library(tidyverse)
+library(rosm)
+library(ggspatial)
+library(leaflet)
+library(htmltools)
+library(mapview)
+library(leafpop)
+```
+
+## Calling Data From iNaturalist
+
+```{r}
+pa <- get_inat_obs(taxon_name = "Parechinus angulosus",
+                   bounds = c(-35.12, 15.94, -21.69, 33.20),
+                   maxresults = 2000)
+
+# These bounds are for the South African coast
+
+#View the first few rows of data
+head(pa)
+```
+
+## Filer the Data based on attributes
+
+```{r}
+# Positional accuracy less than 50m, wild populations, research grade observations
+pa <- pa %>% filter(positional_accuracy<50 & 
+                      latitude<0 &
+                      !is.na(latitude) &
+                      captive_cultivated == "false" &
+                      quality_grade == "research")
+
+class(pa)
+```
+
+## Converting the Dataframe into a Spatial Object
+
+```{r}
+pa <- st_as_sf(pa, coords = c("longitude", "latitude"), crs = 4326)
+
+# Check what class it is now
+class(pa)
+```
+
+## Basic Plot
+
+```{r}
+ggplot() + geom_sf(data = pa)
+
+```
+
+## Making the Plots Pretty
+
+```{r}
+# Adding basemaps to plots
+
+ggplot() + 
+  annotation_map_tile(type = "osm", progress = "none") + 
+  geom_sf(data = pa)
+```
+
+## Make the Map Interactive
+
+```{r}
+leaflet() %>%
+  # Add default OpenStreetMap map tiles
+  addTiles(group = "Default") %>%  
+  # Add our points
+  addCircleMarkers(data = pa,
+                   group = "Parechinus angulosus",
+                   radius = 3, 
+                   color = "green") 
+```
+
+```{r}
+# Add popup labels to inspect the data
+mapview(pa, 
+        popup = 
+          popupTable(pa,
+            zcol = c("user_login", "captive_cultivated", "url")))
+```
+
+```{r}
+# Make the link clickable
+lpa <- pa %>%
+  mutate(click_url = paste("<b><a href='", url, "'>Link to iNat observation</a></b>"))
+
+mapview(pa, 
+        popup = 
+          popupTable(lpa,
+            zcol = c("user_login", "captive_cultivated", "click_url")))
+```
+
+## Intersect the Distribution of Tripneustes gratilla with Parechinus angulosus
+
+```{r}
+#Call the data directly from iNat
+tg <- get_inat_obs(taxon_name = "Tripneustes gratilla",
+                   bounds = c(-35.12, 15.94, -21.69, 33.20),
+                   maxresults = 2000)
+
+#Filter returned observations by a range of attribute criteria
+tg <- tg %>% filter(positional_accuracy<50 & 
+                latitude<0 &
+                !is.na(latitude) &
+                captive_cultivated == "false" &
+                quality_grade == "research")
+
+#See how many records we got
+nrow(tg)
+```
+
+## Convert into Spatial Object
+
+There are considerably less records of The Collector Sea Urchin species in South Africa.
+
+```{r}
+tg <- st_as_sf(tg, coords = c("longitude", "latitude"), crs = 4326)
+```
+
+## Plot the Intersection
+
+```{r}
+ggplot() + 
+  annotation_map_tile(type = "osm", progress = "none") + 
+  geom_sf(data = pa, colour = "blue") +
+  geom_sf(data = tg)
+```
+
+See if they intersect at all
+
+```{r}
+st_intersects(pa, tg) %>% unlist()
+```
+
+They do intersect!
+
+## Make the plot interactive
+
+```{r}
+# Bind the two datasets together
+both_urchins <- rbind(
+  pa %>% mutate(species = "Parechinus angulosus"),
+  tg %>% mutate(species = "Tripneustes gratilla")
+)
+
+# Create the interactive map
+leaflet() %>%
+  addTiles() %>%  # Default OpenStreetMap
+  addCircleMarkers(data = both_urchins,
+                   radius = 3,
+                   color = ~ifelse(species == "Parechinus angulosus", 
+                                   "blue", 
+                                   "red"),
+                   popup = ~paste("Species:", species, "<br>",
+                                  "Observer:", user_login, "<br>",
+                                  "Captive:", captive_cultivated, "<br>",
+                                  "<a href='", url, "'>iNat link</a>"))
+```
